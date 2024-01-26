@@ -1,0 +1,22 @@
+# extensions
+*.egg-info
+*.py[cod]
+
+# envs
+.pt13
+.pt2
+
+# directories
+/checkpoints
+/dist
+/outputs
+/build
+/src
+
+#virtual envs
+pyproject.toml
+poetry.lock
+
+#pycache
+__pycache__
+*/__pycache__

@@ -1,0 +1,27 @@
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to False.
+
+
+  You can now view your Streamlit app in your browser.
+
+  Network URL: http://143.248.158.196:8080
+  External URL: http://143.248.158.196:8080
+
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+VideoTransformerBlock is using checkpointing
+  Stopping...
+  Stopping...
