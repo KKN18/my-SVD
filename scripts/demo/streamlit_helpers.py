@@ -291,6 +291,23 @@ def init_sampling(
     steps = st.sidebar.number_input(
         f"steps #{key}", value=options.get("num_steps", 40), min_value=1, max_value=1000
     )
+
+    # 사용자로부터 replace_after_step 값을 입력받고 session_state에 저장
+    replace_after_step = st.number_input(
+        'Enter the step after which replacement should occur:',
+        min_value=0,
+        max_value=steps-1,  # 최대값을 steps 변수-1로 설정
+        value=steps//2,  # 기본값을 steps//2로 설정
+        step=1
+    )
+    st.session_state['replace_after_step'] = replace_after_step
+
+    # 사용자로부터 replace_indices 리스트를 입력받고 session_state에 저장
+    replace_indices_str = st.text_input('Enter the list of indices to replace, separated by commas (e.g., "0, 2, 4"):', '7')
+    replace_indices = [int(idx.strip()) for idx in replace_indices_str.split(',')]
+    st.session_state['replace_indices'] = replace_indices
+
+
     sampler = st.sidebar.selectbox(
         f"Sampler #{key}",
         [
@@ -521,7 +538,34 @@ def do_sample(
                             print(f"{key}: {value}")
 
                 load_model(model.conditioner)
+                        
                 if test_mode == True:
+                    batch, batch_uc = get_batch(
+                        get_unique_embedder_keys_from_conditioner(model.conditioner),
+                        value_dict,
+                        num_samples,
+                        T=T,
+                        additional_batch_uc_fields=additional_batch_uc_fields,
+                        test_mode=test_mode,
+                        frame_idx=0,
+                    )
+                    c, uc = model.conditioner.get_unconditional_conditioning(
+                        batch,
+                        batch_uc=batch_uc,
+                        force_uc_zero_embeddings=force_uc_zero_embeddings,
+                        force_cond_zero_embeddings=force_cond_zero_embeddings,
+                    )
+                    for k in c:
+                        if not k == "crossattn":
+                            c[k], uc[k] = map(
+                                lambda y: y[k][: math.prod(num_samples)].to("cuda"), (c, uc)
+                            )
+                        if k in ["crossattn", "concat"] and T is not None:
+                            uc[k] = repeat(uc[k], "b ... -> b t ...", t=T)
+                            uc[k] = rearrange(uc[k], "b t ... -> (b t) ...", t=T)
+                            c[k] = repeat(c[k], "b ... -> b t ...", t=T)
+                            c[k] = rearrange(c[k], "b t ... -> (b t) ...", t=T)
+                            
                     # 각 frame_idx에 대한 c와 uc 값을 저장할 리스트 초기화
                     c_list = []
                     uc_list = []
@@ -538,29 +582,17 @@ def do_sample(
                             test_mode=test_mode,
                             frame_idx=i,
                         )
-                        print("<batch/>")
-                        print_dict(batch)
-                        print("</batch>")
-                        print("<batch_uc/>")
-                        print_dict(batch_uc)
-                        print("</batch_uc>")
 
                         # 조건부와 비조건부 값을 얻음
-                        c, uc = model.conditioner.get_unconditional_conditioning(
+                        test_c, test_uc = model.conditioner.get_unconditional_conditioning(
                             batch,
                             batch_uc=batch_uc,
                             force_uc_zero_embeddings=force_uc_zero_embeddings,
                             force_cond_zero_embeddings=force_cond_zero_embeddings,
                         )
-                        print("<c/>")
-                        print_dict(c)
-                        print("</c>")
-                        print("<uc/>")
-                        print_dict(uc)
-                        print("</uc>")
                         # 리스트에 값 추가
-                        c_list.append(c)
-                        uc_list.append(uc)
+                        c_list.append(test_c)
+                        uc_list.append(test_uc)
 
                     for k in c_list[0]:
                         i=0
@@ -578,16 +610,13 @@ def do_sample(
                         # "crossattn"과 "concat" 키에 대해 모든 원소를 연결
                         final_c[key] = torch.cat([c[key] for c in c_list], dim=0)
                         final_uc[key] = torch.cat([uc[key] for uc in uc_list], dim=0)
-                        # final_uc[key] = repeat(uc_list[0][key], "b ... -> b t ...", t=T)
-                        # final_uc[key] = rearrange(final_uc[key], "b t ... -> (b t) ...", t=T)
-                        # final_c[key] = repeat(c_list[0][key], "b ... -> b t ...", t=T)
-                        # final_c[key] = rearrange(final_c[key], "b t ... -> (b t) ...", t=T)
                         
                     final_c["vector"] = c_list[0]["vector"]
                     final_uc["vector"] = uc_list[0]["vector"]
                         
-                    c = final_c
-                    uc = final_uc
+                    test_c = final_c
+                    test_uc = final_uc
+                
                 else:
                     batch, batch_uc = get_batch(
                         get_unique_embedder_keys_from_conditioner(model.conditioner),
@@ -598,26 +627,12 @@ def do_sample(
                         test_mode=test_mode,
                         frame_idx=0,
                     )
-                    # print("<batch/>")
-                    # print_dict(batch)
-                    # print("</batch>")
-                    # print("<batch_uc/>")
-                    # print_dict(batch_uc)
-                    # print("</batch_uc>")
                     c, uc = model.conditioner.get_unconditional_conditioning(
                         batch,
                         batch_uc=batch_uc,
                         force_uc_zero_embeddings=force_uc_zero_embeddings,
                         force_cond_zero_embeddings=force_cond_zero_embeddings,
                     )
-                    # print("<c/>")
-                    # print_dict(c)
-                    # print("</c>")
-                    # print("<uc/>")
-                    # print_dict(uc)
-                    # print("</uc>")
-                    
-                    unload_model(model.conditioner)
                     for k in c:
                         if not k == "crossattn":
                             c[k], uc[k] = map(
@@ -628,13 +643,8 @@ def do_sample(
                             uc[k] = rearrange(uc[k], "b t ... -> (b t) ...", t=T)
                             c[k] = repeat(c[k], "b ... -> b t ...", t=T)
                             c[k] = rearrange(c[k], "b t ... -> (b t) ...", t=T)
-
-                print("<final_c/>")
-                print_dict(c)
-                print("</final_c>")
-                print("<final_uc/>")
-                print_dict(uc)
-                print("</final_uc>")
+                
+                unload_model(model.conditioner)
                 
                 additional_model_inputs = {}
                 for k in batch2model_input:
@@ -664,7 +674,36 @@ def do_sample(
 
                 load_model(model.denoiser)
                 load_model(model.model)
-                samples_z = sampler(denoiser, randn, cond=c, uc=uc) # EulerEDMSampler
+                
+                
+                if test_mode == True:
+                    # 사용자로부터 replace_after_step 값을 입력받음
+                    if 'replace_after_step' not in st.session_state:
+                        raise KeyError('"replace_after_step" not found in st.session_state.')
+                    replace_after_step = st.session_state['replace_after_step']
+
+                    # st.session_state에서 replace_indices 값 불러오기
+                    if 'replace_indices' not in st.session_state:
+                        raise KeyError('"replace_indices" not found in st.session_state.')
+                    replace_indices = st.session_state['replace_indices']
+                    
+                    print(f"replace_after_step: {replace_after_step}")
+                    print(f"replace_indices: {replace_indices}")
+
+                    print("Start sampling Reference...")
+                    # B 이미지에 대한 샘플링 실행
+                    org_randn = randn.clone()
+                    _, intermediate_results_B = sampler(denoiser, randn, cond=test_c, uc=test_uc, is_A=False, replace_after_step=replace_after_step, replace_indices=replace_indices) 
+                    print("Sampling Reference Done")
+                    print("Start sampling Target...")
+                    # A 이미지에 대한 샘플링 실행, B의 중간 결과 사용
+                    samples_z = sampler(denoiser, org_randn, cond=c, uc=uc, is_A=True, intermediate_result_B=intermediate_results_B, replace_after_step=replace_after_step, replace_indices=replace_indices)  # 동일한 인덱스 사용
+                    print("Sampling Target Done")
+
+                else:
+                    samples_z = sampler(denoiser, randn, cond=c, uc=uc)
+
+                
                 unload_model(model.model)
                 unload_model(model.denoiser)
 
@@ -780,7 +819,7 @@ def get_batch(
                 batch[key] = value_dict["cond_frames"][frame_idx]
             else:
                 batch[key] = repeat(value_dict["cond_frames"], "1 ... -> b ...", b=N[0])
-            print(f"[cond_frames] {batch[key].shape}")
+            # print(f"[cond_frames] {batch[key].shape}")
         elif key == "cond_frames_without_noise":
             if test_mode == True:
                 batch[key] = value_dict["cond_frames_without_noise"][frame_idx]
@@ -788,7 +827,7 @@ def get_batch(
                 batch[key] = repeat(
                     value_dict["cond_frames_without_noise"], "1 ... -> b ...", b=N[0]
                 )
-            print(f"[cond_frames_without_noise] {batch[key].shape}")
+            # print(f"[cond_frames_without_noise] {batch[key].shape}")
         else:
             batch[key] = value_dict[key]
 

@@ -185,6 +185,7 @@ if __name__ == "__main__":
     T = st.sidebar.number_input(
         "T", value=version_dict["T"], min_value=0, max_value=128
     )
+
     C = version_dict["C"]
     F = version_dict["f"]
     options = version_dict["options"]
@@ -231,6 +232,7 @@ if __name__ == "__main__":
                 value_dict["cond_frames_without_noise"] = img_list
                 value_dict["cond_frames"] = [img + cond_aug * torch.randn_like(img) for img in img_list]
 
+
         seed = st.sidebar.number_input(
             "seed", value=23, min_value=0, max_value=int(1e9)
         )
@@ -247,7 +249,7 @@ if __name__ == "__main__":
 
         decoding_t = st.number_input(
             "Decode t frames at a time (set small if you are low on VRAM)",
-            value=options.get("decoding_t", T),
+            value=1,  # options.get("decoding_t", T),
             min_value=1,
             max_value=int(1e9),
         )

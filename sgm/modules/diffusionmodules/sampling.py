@@ -106,29 +106,42 @@ class EDMSampler(SingleStepDiffusionSampler):
         )
         return x
 
-    def __call__(self, denoiser, x, cond, uc=None, num_steps=None):
-        x, s_in, sigmas, num_sigmas, cond, uc = self.prepare_sampling_loop(
-            x, cond, uc, num_steps
-        )
+    def __call__(self, denoiser, x, cond, uc=None, num_steps=None, is_A=False, intermediate_result_B=None, replace_after_step=4, replace_indices=None):
+        x, s_in, sigmas, num_sigmas, cond, uc = self.prepare_sampling_loop(x, cond, uc, num_steps)
+        saved_intermediate_results = None  # B 이미지 처리 시 사용할 변수 초기화
+        print(f"x size: {x.size()}")
+        # TODO:
+        # 지금은 replace_after_step이 하나인 경우에만 작동함. 여러개인 경우에는 덮어씌워짐
         for i in self.get_sigma_gen(num_sigmas):
             gamma = (
                 min(self.s_churn / (num_sigmas - 1), 2**0.5 - 1)
                 if self.s_tmin <= sigmas[i] <= self.s_tmax
                 else 0.0
             )
-            print(f'gamma: {gamma}')
-            x = self.sampler_step(
-                s_in * sigmas[i],
-                s_in * sigmas[i + 1],
-                denoiser,
-                x,
-                cond,
-                uc,
-                gamma,
-            )
-            print(f'x after sampler_step: {x}')
+            x = self.sampler_step(s_in * sigmas[i], s_in * sigmas[i + 1], denoiser, x, cond, uc, gamma)
 
-        return x
+            # A 이미지에 대한 처리 로직
+            if is_A and i == replace_after_step and intermediate_result_B is not None and replace_indices is not None:
+                print("Processing target image")
+                for idx in replace_indices:
+                    print(f"idx: {idx}")
+                    if idx < x.size(0):  # idx가 배치 크기 내에 있는지 확인
+                        x[idx] = intermediate_result_B[idx]
+
+            # B 이미지에 대한 처리 로직: replace_after_step일 때 replace_indices의 x 값을 저장
+            if not is_A and i == replace_after_step:
+                print("Processing reference image")
+                # 필요한 크기로 초기화된 텐서 생성
+                saved_intermediate_results = x.new_zeros(x.size())
+                # replace_indices에 해당하는 인덱스만 x에서 추출하여 저장
+                for idx in replace_indices:
+                    print(f"idx: {idx}")
+                    if idx < x.size(0):  # idx가 배치 크기 내에 있는지 확인
+                        saved_intermediate_results[idx] = x[idx]
+
+        if not is_A:
+            return x, saved_intermediate_results  # B 이미지 처리 시 x와 저장된 중간 결과 모두 반환
+        return x  # A 이미지 처리 시 최종 결과 반환
 
 
 class AncestralSampler(SingleStepDiffusionSampler):
